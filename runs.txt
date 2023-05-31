@@ -1,0 +1,46 @@
+In this file I will just write some info regarding the different runs I made, maybe add as tensorboard comment?
+
+- Jan02_12-47.... : This run was done using 5 attention layers, without scheduling the learning rate nor warmstarting 
+- Jan02_14-11.... : This run was done using 6 attention layers, without scheduling the learning rate nor warmstarting 
+
+The other parameters of the above two runs are the default ones which i recap for completeness
+
+batch_size = 8; n_param_heads = 24; d_model = 128; n_heads = 4; eta=1e-3;
+
+Looking at tensorboards of those two runs it seems that the model struggles in the early stages, hence we tried aiding it.
+
+- Jan02_17-16....: Here we added gradient clipping to see if it helps. 
+- Jan03_10-20....: I tried to add learning rate scheduler, to be precise two of them: One that increased the learning rate for the first 2k iterations 
+                    and the other that presumably should help when the model is stuck in plateaus. As we can see the result was not good at all. Also
+                    it seemed to bottleneck the GPU a little. 
+
+- Jan03_11-03....: Back to no gradient clipping and no scheduling, decreased the penalty term to 1e-4(better than 1e-3 seems)
+- Jan03_12-40....: No gradient clipping and no scheduling, NO PENALTY(as we can see little penalty is much better that no penalty)
+
+- Jan05_18-39....: Loaded the benchmark model of Jan03_12-40.. which seemed to have plateauded. Tried to see if, after reloading
+  the optimizer state, changing the learning rate to 1e-2 could help. Seems no, actually it does disasters(I cancelled the run
+  since it was very bad). This one is with learning rate 1e-4, and seems to help in learning a little.
+
+- Jan09-09...: This is a small run with an increased learning rate of 1e-2, as we can see it does not help.
+
+-Jan09_15-51...: Here we change the self.P operations to a Linear layer, this way we have a better initialization. Seems that the memory consumption
+ decreases a lot(very weird). The other paramters are at the usual value, meaning batch_size=10; lr=1e-3; eta=1e-4;n_param_heads = 24; d_model = 128; n_heads = 4;
+ Learning seems to stall, but dive deeper as the memory consumption drop does not seem sensible at all. 
+
+- Jan11_15-18... and 16-07: Here we continue with the Linear layer and decrease the learning rate to 1e-4 and show that it helps training.
+  The convergence seems slower but stedier and the memory consumption is minimal wrt to the previous cofiguration. To keep consistency 
+  remove the bias from the linear layer. in a total of 160k iteration between the two runs it seems we almost reach the previous quality.
+  Still we cannot overfit. 
+
+- Jan12_17-22.... : increased model dimension, and number of heads of multihead attentio to 8. Seems to help learning
+- Jan12_18-23....: same config as the previous but batch size increased from 10 to 32
+- Jan13_14... : same config as previous, but substitued linear layers with MLPs, does not seem to help
+- Jan16_10-03... : went back to Linear layers, increased num_param_heads from 24->48. Seems to have steeper learning curve, although starts slower. 
+
+- Feb_05_... : These two runs are to be concateneted to one another, and I tested if increasing the batch_msa_size could help the
+  the training. To do this I had to implement gradient accumulation. To generate the batches I do something that is somehow
+  advanced in the sense that I do a sorting and a reordering to ensure that we do as few batches as possible given a superbatch. 
+  Currently it seems to bottleneck a little the computation, maybe do a naive splitting. The takeaway is that the training
+  loss improves, while the test losses deteoriorate, signalling an increased overfitting. 
+
+                    
