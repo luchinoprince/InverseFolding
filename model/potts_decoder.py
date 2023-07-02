@@ -216,3 +216,75 @@ class PottsDecoder(torch.nn.Module):
         fields = self._get_params_indep(param_embeddings, N, padding_mask)
 
         return fields
+    
+    def _get_params_ardca(self, param_embeddings, N, padding_mask):
+        
+        padding_mask_inv = (~padding_mask)
+
+        # set embeddings to zero where padding is present
+        param_embeddings = param_embeddings * padding_mask_inv.unsqueeze(1).unsqueeze(3)
+
+        # get fields ---> here I sum over K!
+        fields = torch.sum(self.field_linear(param_embeddings), dim=1)
+
+        # set fields to 0 depending on the padding
+        fields = fields * padding_mask_inv.unsqueeze(2)
+
+        # flatten fields
+        fields = fields.view(-1, N * self.q)
+
+        # flatten to (B, n_param_heads, N*q)
+        param_embeddings = param_embeddings.flatten(start_dim=2, end_dim=3)
+
+        # outer to (B, N*q, N*q)
+        couplings = torch.einsum('bpi, bpj -> bij', (param_embeddings, param_embeddings))
+
+        # create mask for couplings
+        t = torch.ones(self.q, self.q)
+        mask_couplings = (1 - torch.block_diag(*([t] * N))).to(couplings.device)
+        mask_couplings.requires_grad = False
+
+        couplings = couplings * mask_couplings
+
+        #### We keen only lower triangular since we want to do arDCA
+        couplings = torch.tril(couplings)
+
+        return couplings/np.sqrt(self.n_param_heads), fields/np.sqrt(self.n_param_heads)
+    
+    def forward_ardca(self, encodings, padding_mask):
+
+        B, N, _ = encodings.shape
+
+        assert B == padding_mask.shape[0]
+        assert N == padding_mask.shape[1]
+        
+        #with profiler.record_function("Embeddings"):
+        embeddings = self.input_MLP(encodings)
+        #with profiler.record_function("Attention Layers"):
+        for attention_layer in self.attention_layers:
+            embeddings = attention_layer(embeddings, src_key_padding_mask=padding_mask)
+            embeddings = self.relu(embeddings)
+
+        param_embeddings = torch.transpose(self.P(embeddings).reshape(B, N, self.n_param_heads, self.d_model), 1, 2)
+        #embeddings.register_hook(lambda x: print("embeddings backward called"))
+
+        # apply relu
+        param_embeddings = self.relu(param_embeddings)
+
+        # (B, n_param_heads, N, q)
+        param_embeddings = self.output_linear(param_embeddings)
+        #with profiler.record_function("Get params"):
+        couplings, fields = self._get_params_ardca(param_embeddings, N, padding_mask)
+
+        return couplings, fields
+    
+    def sample_ardca(self, encodings, padding_mask, n_samples=1000):
+        """Sampler for arDCA, currently works only for a single sequence.
+            NB: This function should not be used for standard Potts."""
+            ## Put model in evaluation mdoel
+        self.eval()
+        ## fields shape: (B,N,q), we will consider B=1 for the moment
+        ## Couplings shape: (B, N*q, N*q)
+        couplings, fields = self.forward_ardca(encodings, padding_mask)
+        ps = 1
+        return 
