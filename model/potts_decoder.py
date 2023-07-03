@@ -4,6 +4,9 @@ from torchvision.ops import MLP
 from torch.autograd import profiler 
 import numpy as np
 
+from torch.nn.functional import softmax
+from torch.distributions import Categorical
+
 class PottsDecoder(torch.nn.Module):
 
     def __init__(self, q, n_layers, d_model, input_encoding_dim, param_embed_dim, n_heads, n_param_heads, dropout=0.0):
@@ -281,10 +284,33 @@ class PottsDecoder(torch.nn.Module):
     def sample_ardca(self, encodings, padding_mask, n_samples=1000):
         """Sampler for arDCA, currently works only for a single sequence.
             NB: This function should not be used for standard Potts."""
-            ## Put model in evaluation mdoel
+            ## Put model in evaluation mdoel
+        B, N, _ = encodings.shape
+        samples = torch.zeros(n_samples, N, dtype=torch.int)
         self.eval()
+        q = self.q
         ## fields shape: (B,N,q), we will consider B=1 for the moment
         ## Couplings shape: (B, N*q, N*q)
         couplings, fields = self.forward_ardca(encodings, padding_mask)
-        ps = 1
-        return 
+
+        ## At the moment move to CPU! Then maybe move to GPU if we are able to vectorize
+        couplings = couplings.to('cpu')
+        fields = fields.to('cpu')
+        ##############################################################################
+        
+        fields = fields[0,:].reshape(N, q)
+        p_pos = softmax(-fields[0], dim=0)
+        
+        samples[:,0] = Categorical(p_pos).sample((n_samples,))
+        Ham = torch.zeros(q)
+        for sam in range(n_samples):
+            print(f"We are at sample {sam} out of {n_samples}", end="\r")
+            for pos in range(1,N):
+                Ham[:] = fields[pos, :]
+                for acc in range(pos):
+                    for aa in range(q):
+                        Ham[aa] += couplings[0, pos*q+aa, acc*q + samples[sam,acc]]
+                
+                p_pos[:] = softmax(-Ham, dim=0)
+                samples[sam, pos] = Categorical(p_pos).sample()
+        return samples
