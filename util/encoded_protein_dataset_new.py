@@ -88,7 +88,7 @@ class EncodedProteinDataset_new(Dataset):
             assert self.encoding_dim == encodings.shape[1], "Inconsistent encoding dimension"
         
         N = msa.shape[1]
-        if N != encodings.shape[0]: 
+        if N != encodingn_sampless.shape[0]: 
             "Inconsistent encoding and sequence length for numerical sequence file: " + msa_path#numseq_file
             
         #if N < 512:
@@ -165,7 +165,8 @@ class EncodedProteinDataset_aux(Dataset):
             if msa.shape[1] != encodings.shape[0]:
                 print("{} Mismatch in dimension, skipping {}".format(encoding_path, numseq_path))
                 continue
-            if (msa.shape[1]>=100 or msa.shape[0]<10000):
+            ### Otherwise transformer modules have problems
+            if (msa.shape[1] > 520 or msa.shape[0]<2000):
                 continue
 
             self.encodings_paths.append(encoding_path)

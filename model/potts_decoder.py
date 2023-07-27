@@ -299,7 +299,8 @@ class PottsDecoder(torch.nn.Module):
         ##############################################################################
         
         fields = fields[0,:].reshape(N, q)
-        p_pos = softmax(-fields[0], dim=0)
+        #p_pos = softmax(-fields[0], dim=0)
+        p_pos = softmax(fields[0], dim=0)
         
         samples[:,0] = Categorical(p_pos).sample((n_samples,))
         Ham = torch.zeros(q)
@@ -311,6 +312,44 @@ class PottsDecoder(torch.nn.Module):
                     for aa in range(q):
                         Ham[aa] += couplings[0, pos*q+aa, acc*q + samples[sam,acc]]
                 
-                p_pos[:] = softmax(-Ham, dim=0)
+                #p_pos[:] = softmax(-Ham, dim=0)
+                p_pos[:] = softmax(Ham, dim=0)
                 samples[sam, pos] = Categorical(p_pos).sample()
+        return samples
+    
+    def sample_ardca_full(self, encodings, padding_mask, device='cpu', n_samples=1000):
+        """Sampler for arDCA, currently works for many sequences together.
+            NB: This function should not be used for standard Potts."""
+            ## Put model in evaluation model
+        #device = 0
+        ############# MOVE EVERYTHING TO CORRECT DEVICE #######
+        self.eval()
+        self = self.to(device)
+        encodings = encodings.to(device)
+        padding_mask = padding_mask.to(device)
+        B, N, _ = encodings.shape
+        samples = torch.zeros(n_samples, N, dtype=torch.int).to(device)
+      
+        q = self.q
+        ## fields shape: (B,N,q), we will consider B=1 for the moment
+        ## Couplings shape: (B, N*q, N*q)
+        couplings, fields = self.forward_ardca(encodings, padding_mask)
+        ##############################################################################
+        couplings = couplings[0, :, :] #### This simplifies
+        fields = fields[0,:].reshape(N, q)
+        p_pos = softmax(fields[0], dim=0)
+
+        samples[:,0] = Categorical(p_pos).sample((n_samples,))
+
+        with torch.no_grad():   ## If you take this out you will fill you RAM linearly in n_samples
+            for pos in range(1,N):
+                Ham = torch.zeros(n_samples, q).to(device)
+                Ham += fields[pos, :]
+                for acc in range(pos):
+                    ### Can we also vectorize this? Not sure it is going to help that much
+                    for aa in range(q):
+                        second_idx = acc*q + samples[:, acc]
+                        Ham[:, aa] += couplings[pos*q+aa, second_idx]#.unsqueeze(-1)
+                p_pos = softmax(Ham, dim=1)
+                samples[:, pos] = Categorical(p_pos).sample()
         return samples

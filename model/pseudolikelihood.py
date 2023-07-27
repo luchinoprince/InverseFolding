@@ -115,7 +115,16 @@ def get_npll2(msas_embedded, V, F, N, q):
     return -pll#, E, torch.logsumexp(Ec, axis=-1)    ## this should return the different log predictives
 
 
-
+def get_npll3(msas_embedded, couplings, fields, N, q):
+    loss = torch.nn.CrossEntropyLoss(reduction='none')
+    localfiels = torch.einsum("bNP,bmP->bmN", [couplings,msas_embedded] )
+    localfiels = localfiels + fields.unsqueeze(1)
+    localfiels = localfiels.reshape((-1, q))
+    msas_embedded= msas_embedded.reshape((-1, q))
+    pll = loss(localfiels.reshape((-1, q)), msas_embedded.argmax(dim=-1).flatten())
+    #print(pll)
+    #print(pll.shape)
+    return pll
 
 
 
